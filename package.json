@@ -1,0 +1,16 @@
+{
+  "name": "wordrush",
+  "version": "1.0.0",
+  "description": "Multiplayer word-guessing game with rooms, live progress and chat",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "an-array-of-english-words": "^2.0.0",
+    "ws": "^8.18.0"
+  }
+}

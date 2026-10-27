@@ -1,3 +1,13 @@
+---
+title: WordRush
+emoji: 🚀
+colorFrom: indigo
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # WordRush 🚀
 
 A real-time multiplayer Wordle racing game inspired by **skribbl.io** and **Wordle Unlimited**! Join or create rooms, customize your cartoon avatar, and race friends in real-time to solve the same secret word.
