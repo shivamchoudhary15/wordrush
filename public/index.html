@@ -1167,6 +1167,7 @@ button.danger:hover {
     </div>
 
     <button id="startBtn" class="gold" aria-label="Start Game" style="font-size:18px;padding:16px">🚀 Start Game</button>
+    <button id="claimHostBtn" class="gold" aria-label="Claim Host Role and Start" style="font-size:16px;padding:15px;display:none;width:100%;margin-top:10px;background:linear-gradient(135deg, #f59e0b, #eab308);border:none;border-radius:10px;color:#18181b;font-weight:800;cursor:pointer">👑 Claim Host & Start</button>
   </div>
 </div>
 
@@ -1662,6 +1663,24 @@ function ensureConnected() {
   connect();
 }
 
+let heartbeatInterval = null;
+
+function startHeartbeat() {
+  stopHeartbeat();
+  heartbeatInterval = setInterval(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try { ws.send(JSON.stringify({ type: 'ping' })); } catch (e) {}
+    }
+  }, 2500);
+}
+
+function stopHeartbeat() {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
+}
+
 function connect() {
   if (isAuditOrBot()) return;
   if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
@@ -1669,6 +1688,7 @@ function connect() {
     const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
     ws = new WebSocket(proto + location.host);
     ws.onopen = () => {
+      startHeartbeat();
       queue.splice(0).forEach((m) => {
         try { ws.send(m); } catch (e) {}
       });
@@ -1679,13 +1699,15 @@ function connect() {
       } catch (err) {}
     };
     ws.onerror = () => {
-      // Prevent uncaught error events
+      stopHeartbeat();
     };
     ws.onclose = () => {
+      stopHeartbeat();
       if (S) {
         toast('Disconnected from server');
         S = null;
         showScreen('home');
+        $('#codeIn').value = '';
         history.replaceState(null, '', location.pathname);
       } else if (queue.length > 0) {
         toast('Unable to connect to game server. Please try again.');
@@ -1770,11 +1792,14 @@ function handle(m) {
     renderPublicRooms(m.rooms);
   } else if (m.type === 'typing') {
     updatePlayerTyping(m.id, m.len);
+  } else if (m.type === 'pong') {
+    return;
   } else if (m.type === 'left') {
     S = null;
     cur = '';
     syncMobileInput();
     const inp = $('#mobileGuessInput'); if (inp) inp.blur();
+    $('#codeIn').value = '';
     showScreen('home');
     history.replaceState(null, '', location.pathname);
   }
@@ -1791,9 +1816,7 @@ function showScreen(id) {
 
 function leaveRoom() {
   closeConfirm();
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    send({ type: 'leave' });
-  }
+  notifyLeave();
   S = null;
   cur = '';
   syncMobileInput();
@@ -1802,6 +1825,7 @@ function leaveRoom() {
   prevLen = 0;
   prevDiscoveredCount = 0;
   recordedThisRound = false;
+  $('#codeIn').value = '';
   $('#overlay').classList.remove('show');
   $('#inspectModal').classList.remove('show');
   $('#confirmModal').classList.remove('show');
@@ -1906,6 +1930,11 @@ function pushSettings() {
 });
 
 $('#startBtn').onclick = () => { initAudio(); send({ type: 'start' }); };
+$('#claimHostBtn').onclick = () => {
+  initAudio();
+  send({ type: 'claimHost' });
+  toast('👑 Claiming host role…');
+};
 $('#copyLink').onclick = () => {
   const link = location.origin + '/?room=' + S.code;
   (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject())
@@ -1976,7 +2005,10 @@ function renderLobby() {
     $(s).disabled = !host;
   });
   $('#startBtn').style.display = host ? 'block' : 'none';
-  $('#hostNote').textContent = host ? 'You are the host. Customize word length and settings, then start!' : 'Waiting for host to start the game…';
+  $('#claimHostBtn').style.display = host ? 'none' : 'block';
+  $('#hostNote').textContent = host
+    ? 'You are the host. Customize word length and settings, then start!'
+    : 'Waiting for host to start the game… (Host disconnected or idle? Click "👑 Claim Host & Start" above!)';
 }
 
 // ==========================================
@@ -2610,6 +2642,15 @@ function renderOverlay() {
       card.append(b);
     } else {
       card.append(el('div', 'tagline', 'Waiting for host to start a new match…'));
+      const bClaim = el('button', 'gold', '👑 Claim Host & Play Again');
+      bClaim.style.width = '100%';
+      bClaim.style.padding = '12px';
+      bClaim.style.marginTop = '6px';
+      bClaim.onclick = () => {
+        send({ type: 'claimHost' });
+        send({ type: 'again' });
+      };
+      card.append(bClaim);
     }
     const bHome = el('button', 'secondary', '🏠 Back to Home');
     bHome.style.width = '100%';
@@ -2723,7 +2764,18 @@ $('#chatBtn').onclick = sendChat;
 $('#chatIn').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
 
 function notifyLeave() {
-  if (ws && ws.readyState === WebSocket.OPEN && S) {
+  stopHeartbeat();
+  if (S && S.code && S.you) {
+    const payload = JSON.stringify({ roomCode: S.code, playerId: S.you });
+    try {
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/leave', new Blob([payload], { type: 'application/json' }));
+      } else {
+        fetch('/api/leave', { method: 'POST', body: payload, keepalive: true, headers: { 'Content-Type': 'application/json' } }).catch(() => {});
+      }
+    } catch (e) {}
+  }
+  if (ws && ws.readyState === WebSocket.OPEN) {
     try {
       ws.send(JSON.stringify({ type: 'leave' }));
       ws.close();

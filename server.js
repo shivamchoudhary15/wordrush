@@ -166,8 +166,51 @@ const SECURITY_HEADERS = {
   'Referrer-Policy': 'strict-origin-when-cross-origin',
 };
 
+// ---------- Game Logic ----------
+const rooms = new Map();
+const CLIENT_TIMEOUT_MS = 8000;
+
 const server = http.createServer((req, res) => {
   const parsed = req.url.split('?')[0];
+
+  if (parsed === '/api/leave') {
+    let body = '';
+    req.on('data', (chunk) => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const queryParams = new URLSearchParams(req.url.split('?')[1] || '');
+        const data = body ? JSON.parse(body) : {};
+        const roomCode = String(data.roomCode || queryParams.get('room') || '').toUpperCase().trim();
+        const playerId = String(data.playerId || queryParams.get('player') || '').trim();
+
+        if (roomCode && playerId) {
+          const room = rooms.get(roomCode);
+          if (room) {
+            const player = room.players.get(playerId);
+            if (player) {
+              if (player.ws) {
+                removePlayer(player.ws);
+                try { player.ws.terminate(); } catch (e) {}
+              } else {
+                player.connected = false;
+                room.players.delete(playerId);
+                cleanupRoom(room);
+                if (rooms.has(roomCode)) broadcast(room);
+              }
+            }
+          }
+        }
+      } catch (e) {}
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        ...SECURITY_HEADERS,
+      });
+      res.end('{"ok":true}');
+    });
+    return;
+  }
+
   let safePath = path.normalize(parsed).replace(/^(\.\.[\/\\])+/, '');
   if (safePath === '/' || safePath === '') safePath = '/index.html';
   const filePath = path.join(__dirname, 'public', safePath);
@@ -191,9 +234,6 @@ const server = http.createServer((req, res) => {
 });
 
 const wss = new WebSocketServer({ server });
-
-// ---------- Game Logic ----------
-const rooms = new Map();
 
 function makeCode() {
   const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -291,9 +331,70 @@ function cleanName(name) {
   return n || 'Player' + crypto.randomInt(100, 999);
 }
 
+function isPlayerAlive(p) {
+  if (!p || !p.connected) return false;
+  if (!p.ws || p.ws.readyState !== 1) return false;
+  if (p.ws.lastSeen && Date.now() - p.ws.lastSeen > CLIENT_TIMEOUT_MS) return false;
+  return true;
+}
+
+function cleanupRoom(room) {
+  if (!room) return null;
+
+  // 1. Purge disconnected or dead players
+  for (const [id, p] of room.players) {
+    if (!isPlayerAlive(p)) {
+      if (p.ws) {
+        p.ws.roomCode = null;
+        p.ws.playerId = null;
+        try { p.ws.terminate(); } catch (e) {}
+      }
+      p.connected = false;
+      room.players.delete(id);
+    }
+  }
+
+  // 2. If room has no alive players, delete the room
+  const alivePlayers = [...room.players.values()].filter(isPlayerAlive);
+  if (alivePlayers.length === 0) {
+    clearTimeout(room.timer);
+    rooms.delete(room.code);
+    return null;
+  }
+
+  // 3. Ensure host is valid and alive
+  const currentHost = room.players.get(room.hostId);
+  if (!isPlayerAlive(currentHost)) {
+    room.hostId = alivePlayers[0].id;
+    say(room, `👑 ${alivePlayers[0].name} is now the host.`);
+    broadcast(room);
+  }
+
+  return room;
+}
+
+function cleanupAllRooms() {
+  for (const room of [...rooms.values()]) {
+    cleanupRoom(room);
+  }
+}
+
 function addPlayer(room, ws, name, avatar) {
+  // Purge dead players if room already has players
+  for (const [id, q] of room.players) {
+    if (!isPlayerAlive(q)) {
+      if (q.ws) {
+        q.ws.roomCode = null;
+        q.ws.playerId = null;
+        try { q.ws.terminate(); } catch (e) {}
+      }
+      q.connected = false;
+      room.players.delete(id);
+    }
+  }
+
   let finalName = cleanName(name);
-  const names = new Set([...room.players.values()].map((p) => p.name.toLowerCase()));
+  const names = new Set([...room.players.values()].filter(isPlayerAlive).map((p) => p.name.toLowerCase()));
   let base = finalName, i = 2;
   while (names.has(finalName.toLowerCase())) finalName = `${base.slice(0, 13)}${i++}`;
 
@@ -313,9 +414,21 @@ function addPlayer(room, ws, name, avatar) {
     connected: true,
   };
   room.players.set(p.id, p);
-  if (!room.hostId || !room.players.has(room.hostId)) room.hostId = p.id;
+
+  if (!rooms.has(room.code)) {
+    rooms.set(room.code, room);
+  }
+
+  const currentHost = room.players.get(room.hostId);
+  if (!room.hostId || !isPlayerAlive(currentHost)) {
+    room.hostId = p.id;
+  }
+
   ws.playerId = p.id;
   ws.roomCode = room.code;
+  ws.lastSeen = Date.now();
+
+  cleanupRoom(room);
   return p;
 }
 
@@ -349,7 +462,7 @@ function viewFor(room, p) {
     me: p.guesses,
     discoveredSpots: room.discoveredSpots || Array(len).fill(null),
     knownLetters: [...(room.knownLetters ? room.knownLetters.values() : [])],
-    players: [...room.players.values()].filter((q) => q.connected).map((q) => ({
+    players: [...room.players.values()].filter(isPlayerAlive).map((q) => ({
       id: q.id,
       name: q.name,
       avatar: q.avatar,
@@ -377,12 +490,14 @@ function viewFor(room, p) {
 }
 
 function broadcast(room) {
-  for (const p of room.players.values()) if (p.connected) send(p.ws, viewFor(room, p));
+  if (!room) return;
+  for (const p of room.players.values()) if (isPlayerAlive(p)) send(p.ws, viewFor(room, p));
 }
 
 function say(room, text, name = null) {
+  if (!room) return;
   for (const p of room.players.values()) {
-    if (!p.connected) continue;
+    if (!isPlayerAlive(p)) continue;
     send(p.ws, { type: 'chat', name, text, system: !name });
   }
 }
@@ -439,7 +554,7 @@ async function startRound(room) {
     p.solved = false;
     p.roundPoints = 0;
     p.typingLen = 0;
-    p.done = !p.connected;
+    p.done = !isPlayerAlive(p);
   }
 
   room.timer = setTimeout(() => endRound(room), room.settings.time * 1000);
@@ -465,7 +580,7 @@ function endRound(room) {
 
 function checkAllDone(room) {
   if (room.phase !== 'playing') return;
-  const active = [...room.players.values()].filter((p) => p.connected);
+  const active = [...room.players.values()].filter(isPlayerAlive);
   if (active.length && active.every((p) => p.done)) endRound(room);
 }
 
@@ -577,34 +692,33 @@ async function handleGuess(room, p, raw) {
 }
 
 function removePlayer(ws) {
-  const room = rooms.get(ws.roomCode);
+  if (!ws) return;
+  const roomCode = ws.roomCode;
   const playerId = ws.playerId;
   ws.roomCode = null;
   ws.playerId = null;
+  if (!roomCode) return;
+  const room = rooms.get(roomCode);
   if (!room) return;
-  const p = room.players.get(playerId);
-  if (!p) return;
-  p.connected = false;
-  room.players.delete(p.id);
 
-  const connected = [...room.players.values()].filter((q) => q.connected);
-  if (!connected.length) {
-    clearTimeout(room.timer);
-    rooms.delete(room.code);
-    return;
+  const p = room.players.get(playerId);
+  if (p) {
+    p.connected = false;
+    room.players.delete(playerId);
+    say(room, `${p.name} left.`);
   }
-  if (!room.hostId || room.hostId === p.id || !room.players.has(room.hostId)) {
-    room.hostId = connected[0].id;
-    say(room, `👑 ${connected[0].name} is now the host.`);
+
+  const cleaned = cleanupRoom(room);
+  if (cleaned && rooms.has(roomCode)) {
+    broadcast(room);
+    checkAllDone(room);
   }
-  say(room, `${p.name} left.`);
-  broadcast(room);
-  checkAllDone(room);
 }
 
 function joinRoom(ws, room, name, avatar) {
+  if (room.players.size > 0) cleanupRoom(room);
   const max = room.settings.maxPlayers || MAX_PLAYERS;
-  const activeCount = [...room.players.values()].filter((p) => p.connected).length;
+  const activeCount = [...room.players.values()].filter(isPlayerAlive).length;
   if (activeCount >= max) return send(ws, { type: 'error', msg: 'Room is full' });
   const p = addPlayer(room, ws, name, avatar);
   say(room, `${p.name} joined.`);
@@ -612,17 +726,18 @@ function joinRoom(ws, room, name, avatar) {
 }
 
 function getPublicRooms() {
+  cleanupAllRooms();
   const list = [];
   for (const r of rooms.values()) {
     if (!r.settings.isPublic || r.phase === 'over') continue;
     const host = r.players.get(r.hostId);
-    const activeCount = [...r.players.values()].filter((p) => p.connected).length;
-    if (activeCount === 0) continue;
+    const alivePlayers = [...r.players.values()].filter(isPlayerAlive);
+    if (alivePlayers.length === 0 || !isPlayerAlive(host)) continue;
     list.push({
       code: r.code,
       hostName: host ? host.name : 'Unknown',
       hostAvatar: host ? host.avatar : null,
-      playerCount: activeCount,
+      playerCount: alivePlayers.length,
       maxPlayers: r.settings.maxPlayers || MAX_PLAYERS,
       round: r.round,
       rounds: r.settings.rounds,
@@ -638,12 +753,24 @@ function getPublicRooms() {
 // ---------- WebSocket handling ----------
 wss.on('connection', (ws) => {
   ws.isAlive = true;
-  ws.on('pong', () => (ws.isAlive = true));
+  ws.lastSeen = Date.now();
+  ws.on('pong', () => {
+    ws.isAlive = true;
+    ws.lastSeen = Date.now();
+  });
 
   ws.on('message', async (data) => {
+    ws.isAlive = true;
+    ws.lastSeen = Date.now();
+
     let msg;
     try { msg = JSON.parse(data); } catch { return; }
     if (!msg || typeof msg.type !== 'string') return;
+
+    if (msg.type === 'ping') {
+      send(ws, { type: 'pong' });
+      return;
+    }
 
     const room = rooms.get(ws.roomCode);
     const player = room && room.players.get(ws.playerId);
@@ -657,6 +784,7 @@ wss.on('connection', (ws) => {
       }
       case 'join': {
         if (room) removePlayer(ws);
+        cleanupAllRooms();
         const code = String(msg.code || '').toUpperCase().trim();
         const r = rooms.get(code);
         if (!r) return send(ws, { type: 'error', msg: 'Room not found' });
@@ -665,16 +793,26 @@ wss.on('connection', (ws) => {
       }
       case 'quick': {
         if (room) removePlayer(ws);
+        cleanupAllRooms();
         let r = [...rooms.values()].find(
-          (x) => x.settings.isPublic && x.phase === 'lobby' && x.players.size < (x.settings.maxPlayers || MAX_PLAYERS)
+          (x) => x.settings.isPublic && x.phase === 'lobby' && isPlayerAlive(x.players.get(x.hostId)) && [...x.players.values()].filter(isPlayerAlive).length < (x.settings.maxPlayers || MAX_PLAYERS)
         );
         if (!r) {
           r = [...rooms.values()].find(
-            (x) => x.settings.isPublic && x.phase !== 'over' && x.players.size < (x.settings.maxPlayers || MAX_PLAYERS)
+            (x) => x.settings.isPublic && x.phase !== 'over' && isPlayerAlive(x.players.get(x.hostId)) && [...x.players.values()].filter(isPlayerAlive).length < (x.settings.maxPlayers || MAX_PLAYERS)
           );
         }
         if (!r) r = createRoom(true);
         joinRoom(ws, r, msg.name, msg.avatar);
+        break;
+      }
+      case 'claimHost': {
+        if (!room || !player) return;
+        if (room.phase !== 'lobby' && room.phase !== 'over') return;
+        if (room.hostId === player.id) return;
+        room.hostId = player.id;
+        say(room, `👑 ${player.name} is now the host.`);
+        broadcast(room);
         break;
       }
       case 'listRooms': {
@@ -696,7 +834,7 @@ wss.on('connection', (ws) => {
         const len = Math.max(0, Math.min(maxLen, parseInt(msg.len) || 0));
         player.typingLen = len;
         for (const q of room.players.values()) {
-          if (q.connected && q.id !== player.id) {
+          if (isPlayerAlive(q) && q.id !== player.id) {
             send(q.ws, { type: 'typing', id: player.id, len });
           }
         }
@@ -707,7 +845,7 @@ wss.on('connection', (ws) => {
         const emoji = String(msg.emoji || '').slice(0, 4);
         if (!emoji) return;
         for (const q of room.players.values()) {
-          if (q.connected) send(q.ws, { type: 'reaction', id: player.id, name: player.name, emoji });
+          if (isPlayerAlive(q)) send(q.ws, { type: 'reaction', id: player.id, name: player.name, emoji });
         }
         break;
       }
@@ -760,9 +898,9 @@ wss.on('connection', (ws) => {
         room.clue = null;
         room.discoveredSpots = [null, null, null, null, null];
         room.knownLetters = new Map();
-        for (const [id, p] of room.players) {
-          if (!p.connected) room.players.delete(id);
-          else { p.guesses = []; p.done = false; p.solved = false; p.roundPoints = 0; p.score = 0; p.typingLen = 0; }
+        cleanupRoom(room);
+        for (const p of room.players.values()) {
+          p.guesses = []; p.done = false; p.solved = false; p.roundPoints = 0; p.score = 0; p.typingLen = 0;
         }
         say(room, 'Back in the lobby.');
         broadcast(room);
@@ -810,15 +948,15 @@ wss.on('connection', (ws) => {
 });
 
 setInterval(() => {
+  cleanupAllRooms();
   for (const ws of wss.clients) {
-    if (!ws.isAlive) {
+    if (ws.readyState !== 1 || (ws.lastSeen && Date.now() - ws.lastSeen > CLIENT_TIMEOUT_MS)) {
       removePlayer(ws);
-      ws.terminate();
+      try { ws.terminate(); } catch (e) {}
       continue;
     }
-    ws.isAlive = false;
-    ws.ping();
+    try { ws.ping(); } catch (e) {}
   }
-}, 5000);
+}, 3000);
 
 server.listen(PORT, () => console.log(`WordRush running at http://localhost:${PORT}`));
