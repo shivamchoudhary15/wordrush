@@ -1612,7 +1612,6 @@ function leaveRoom() {
   $('#inspectModal').classList.remove('show');
   showScreen('home');
   history.replaceState(null, '', location.pathname);
-  toast('Returned to home');
 }
 
 const me = () => S && S.players.find((p) => p.id === S.you);
