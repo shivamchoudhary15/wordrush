@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="google-site-verification" content="oHjPKePMQ33NfRgbZNthvPjqpa8VsIle75VdD1_S5Ck" />
 <title>WordRush — Free Real-Time Multiplayer Wordle Game Online</title>
 <meta name="description" content="Play WordRush online! A free real-time multiplayer Wordle racing game inspired by skribbl.io. Race friends with dynamic 4, 5, 6, and 7-letter words, custom cartoon avatars, and live team clues.">
@@ -104,6 +104,12 @@ html, body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   overflow-x: hidden;
   user-select: none;
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+}
+
+button, input, select, textarea, .k, .t, .brow, .board, .board-wrapper, .rx-btn, .icon-btn, .avatar-preview-box, .av-cycle-btn, .pl-card, .card {
+  touch-action: manipulation;
 }
 
 button {
@@ -588,7 +594,40 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 
 /* Center Column (Wordle Board) */
 .col.center { align-items: center; justify-content: space-between; overflow-y: auto; }
-.board { display: grid; gap: 6px; margin: auto 0; }
+.board-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: auto 0;
+  cursor: pointer;
+  touch-action: manipulation;
+  outline: none;
+}
+#mobileGuessForm {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  z-index: 10;
+  cursor: pointer;
+}
+#mobileGuessInput {
+  width: 100%;
+  height: 100%;
+  opacity: 0.001;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: transparent;
+  caret-color: transparent;
+  font-size: 16px;
+  cursor: pointer;
+  touch-action: manipulation;
+  pointer-events: auto;
+  box-sizing: border-box;
+}
+.board { display: grid; gap: 6px; }
 .brow { display: grid; gap: 6px; }
 .t {
   border: 2px solid var(--line);
@@ -603,6 +642,15 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .t.f {
   border-color: #6366f1;
   animation: pop 0.1s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.t.active-slot {
+  border-color: rgba(99, 102, 241, 0.85);
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.45);
+  animation: pulseSlot 1.2s ease-in-out infinite alternate;
+}
+@keyframes pulseSlot {
+  0% { transform: scale(1); box-shadow: 0 0 4px rgba(99, 102, 241, 0.3); }
+  100% { transform: scale(1.05); box-shadow: 0 0 14px rgba(99, 102, 241, 0.65); border-color: #818cf8; }
 }
 .t.g, .t.y, .t.b { border-color: transparent; color: #fff; }
 .t.g { background: var(--green); box-shadow: 0 0 14px var(--green-glow); }
@@ -925,6 +973,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   .col.center { order: -1; }
   .brow { gap: 5px; }
   .k { height: 46px; font-size: 13px; }
+  input, select, textarea {
+    font-size: 16px;
+  }
+  .board-wrapper {
+    margin: 4px 0;
+  }
 }
 </style>
 </head>
@@ -933,17 +987,20 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 <canvas id="confettiCanvas"></canvas>
 
 <!-- Top Navigation & Preferences -->
-<div class="nav-bar">
-  <button class="icon-btn" id="btnStats" title="Statistics">📊</button>
-  <button class="icon-btn" id="btnSound" title="Toggle Sound">🔊</button>
-  <button class="icon-btn" id="btnTheme" title="Toggle Dark/Light Mode">🌙</button>
-  <button class="icon-btn" id="btnColorblind" title="Colorblind Mode">👁️</button>
-</div>
+<header>
+  <nav class="nav-bar" aria-label="Game controls">
+    <button class="icon-btn" id="btnStats" title="Statistics" aria-label="View statistics">📊</button>
+    <button class="icon-btn" id="btnSound" title="Toggle Sound" aria-label="Toggle sound">🔊</button>
+    <button class="icon-btn" id="btnTheme" title="Toggle Dark/Light Mode" aria-label="Toggle dark or light theme">🌙</button>
+    <button class="icon-btn" id="btnColorblind" title="Colorblind Mode" aria-label="Toggle colorblind mode">👁️</button>
+  </nav>
+</header>
 
+<main id="main">
 <!-- SCREEN: HOME -->
 <div id="home" class="screen active">
   <div class="wrap">
-    <div class="logo-tiles">
+    <div class="logo-tiles" aria-hidden="true">
       <i style="background:var(--green)">W</i>
       <i style="background:var(--yellow)">O</i>
       <i style="background:var(--gray)">R</i>
@@ -955,26 +1012,26 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 
     <!-- Avatar Builder Card -->
     <div class="avatar-creator card">
-      <div class="avatar-preview-box" id="avatarPreview" title="Click to randomize!"></div>
+      <div class="avatar-preview-box" id="avatarPreview" title="Click to randomize!" role="button" tabindex="0" aria-label="Avatar preview. Click to randomize avatar."></div>
       <div class="avatar-controls">
-        <button class="av-cycle-btn" id="btnAvColor">🎨 Color</button>
-        <button class="av-cycle-btn" id="btnAvEyes">👀 Eyes</button>
-        <button class="av-cycle-btn" id="btnAvMouth">👄 Mouth</button>
-        <button class="av-cycle-btn" id="btnAvHat">🎩 Hat</button>
+        <button class="av-cycle-btn" id="btnAvColor" aria-label="Change avatar color">🎨 Color</button>
+        <button class="av-cycle-btn" id="btnAvEyes" aria-label="Change avatar eyes">👀 Eyes</button>
+        <button class="av-cycle-btn" id="btnAvMouth" aria-label="Change avatar mouth">👄 Mouth</button>
+        <button class="av-cycle-btn" id="btnAvHat" aria-label="Change avatar hat">🎩 Hat</button>
       </div>
-      <button class="secondary" id="btnAvRandom" style="width:100%;margin-top:8px;padding:6px;font-size:12px">🎲 Randomize Avatar</button>
+      <button class="secondary" id="btnAvRandom" aria-label="Randomize avatar" style="width:100%;margin-top:8px;padding:6px;font-size:12px">🎲 Randomize Avatar</button>
     </div>
 
     <!-- Join Controls -->
     <div class="card stack">
-      <input id="nameIn" maxlength="16" placeholder="Choose your name" autocomplete="off">
-      <button id="quickBtn" class="gold" style="font-size:16px;padding:13px">⚡ Quick Play</button>
-      <button id="createBtn" class="secondary">Create Private Room</button>
-      <button id="browseBtn" class="secondary">🌐 Browse Public Rooms</button>
+      <input id="nameIn" maxlength="16" placeholder="Choose your name" autocomplete="off" aria-label="Choose your nickname">
+      <button id="quickBtn" class="gold" aria-label="Quick Play match" style="font-size:16px;padding:13px">⚡ Quick Play</button>
+      <button id="createBtn" class="secondary" aria-label="Create private room">Create Private Room</button>
+      <button id="browseBtn" class="secondary" aria-label="Browse public rooms">🌐 Browse Public Rooms</button>
       <div class="divider">or join with room code</div>
       <div class="row">
-        <input id="codeIn" maxlength="4" placeholder="CODE" autocomplete="off">
-        <button id="joinBtn" class="secondary">Join</button>
+        <input id="codeIn" maxlength="4" placeholder="CODE" autocomplete="off" aria-label="4-letter room code">
+        <button id="joinBtn" class="secondary" aria-label="Join private room">Join</button>
       </div>
     </div>
     <p class="tagline" style="margin-top:20px;font-size:13px">
@@ -984,13 +1041,13 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 </div>
 
 <!-- MODAL: BROWSE PUBLIC ROOMS -->
-<div id="roomsModal">
+<div id="roomsModal" role="dialog" aria-modal="true" aria-labelledby="roomsModalTitle">
   <div class="card">
     <div class="topbar">
-      <h3 style="margin:0">🌐 Public Rooms</h3>
+      <h3 style="margin:0" id="roomsModalTitle">🌐 Public Rooms</h3>
       <div class="row" style="flex:0;gap:6px">
-        <button class="secondary" id="btnRefreshRooms" style="padding:6px 12px">🔄 Refresh</button>
-        <button class="secondary" id="btnCloseRooms" style="padding:6px 12px">✕</button>
+        <button class="secondary" id="btnRefreshRooms" aria-label="Refresh public rooms" style="padding:6px 12px">🔄 Refresh</button>
+        <button class="secondary" id="btnCloseRooms" aria-label="Close public rooms modal" style="padding:6px 12px">✕</button>
       </div>
     </div>
     <div class="rooms-list" id="publicRoomsList"></div>
@@ -998,11 +1055,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 </div>
 
 <!-- MODAL: STATS -->
-<div id="statsModal">
+<div id="statsModal" role="dialog" aria-modal="true" aria-labelledby="statsModalTitle">
   <div class="card">
     <div class="topbar">
-      <h3 style="margin:0">📊 Player Statistics</h3>
-      <button class="secondary" id="btnCloseStats" style="padding:6px 12px">✕</button>
+      <h3 style="margin:0" id="statsModalTitle">📊 Player Statistics</h3>
+      <button class="secondary" id="btnCloseStats" aria-label="Close statistics modal" style="padding:6px 12px">✕</button>
     </div>
     <div class="stats-grid">
       <div class="stat-box"><span class="stat-num" id="statPlayed">0</span><span class="stat-lbl">Played</span></div>
@@ -1016,11 +1073,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 </div>
 
 <!-- MODAL: INSPECT PLAYER GUESSES -->
-<div id="inspectModal">
+<div id="inspectModal" role="dialog" aria-modal="true" aria-labelledby="inspectTitle">
   <div class="card">
     <div class="topbar">
       <h3 style="margin:0" id="inspectTitle">Player Board</h3>
-      <button class="secondary" id="btnCloseInspect" style="padding:6px 12px">✕</button>
+      <button class="secondary" id="btnCloseInspect" aria-label="Close inspect modal" style="padding:6px 12px">✕</button>
     </div>
     <div id="inspectContent" style="margin:14px 0"></div>
   </div>
@@ -1030,14 +1087,14 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 <div id="lobby" class="screen">
   <div class="wrap">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <button class="secondary" id="btnLeaveLobby" style="padding:8px 16px;font-size:13px;font-weight:700;display:inline-flex;align-items:center;gap:6px">← Home</button>
+      <button class="secondary" id="btnLeaveLobby" aria-label="Leave lobby and return to home" style="padding:8px 16px;font-size:13px;font-weight:700;display:inline-flex;align-items:center;gap:6px">← Home</button>
       <span class="tagline" style="margin:0;font-size:13px">WordRush Lobby</span>
     </div>
     <div class="card" style="text-align:center">
       <div class="tagline" style="margin:0">Invite Code</div>
       <div class="code-badge" id="lobbyCode"></div>
       <div class="row" style="margin-top:12px">
-        <button class="secondary" id="copyLink">📋 Copy Invite Link</button>
+        <button class="secondary" id="copyLink" aria-label="Copy room invite link">📋 Copy Invite Link</button>
       </div>
     </div>
 
@@ -1049,8 +1106,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
     <div class="card">
       <h3 style="margin-top:0">Game Settings</h3>
       <div class="settings-grid">
-        <label>Word Length
-          <select id="setWordLength">
+        <label for="setWordLength">Word Length
+          <select id="setWordLength" aria-label="Word length">
             <option value="4">4 Letters (Fast)</option>
             <option value="5" selected>5 Letters (Classic)</option>
             <option value="6">6 Letters (Challenging)</option>
@@ -1058,32 +1115,32 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
             <option value="random">Random Each Round</option>
           </select>
         </label>
-        <label>Rounds
-          <select id="setRounds"></select>
+        <label for="setRounds">Rounds
+          <select id="setRounds" aria-label="Number of rounds"></select>
         </label>
-        <label>Time per round
-          <select id="setTime"></select>
+        <label for="setTime">Time per round
+          <select id="setTime" aria-label="Time per round"></select>
         </label>
-        <label>Max Players
-          <select id="setMaxPlayers"></select>
+        <label for="setMaxPlayers">Max Players
+          <select id="setMaxPlayers" aria-label="Maximum players"></select>
         </label>
-        <label class="chk"><input type="checkbox" id="setSharedIntel" checked> 🧩 Team Intel (Clues & finders)</label>
-        <label class="chk"><input type="checkbox" id="setEnableHints" checked> 💡 Clue Hints</label>
-        <label class="chk"><input type="checkbox" id="setHardMode"> Hard Mode</label>
-        <label class="chk"><input type="checkbox" id="setPublic"> Public Room</label>
+        <label class="chk" for="setSharedIntel"><input type="checkbox" id="setSharedIntel" checked> 🧩 Team Intel (Clues & finders)</label>
+        <label class="chk" for="setEnableHints"><input type="checkbox" id="setEnableHints" checked> 💡 Clue Hints</label>
+        <label class="chk" for="setHardMode"><input type="checkbox" id="setHardMode"> Hard Mode</label>
+        <label class="chk" for="setPublic"><input type="checkbox" id="setPublic"> Public Room</label>
       </div>
 
       <div style="margin-top:14px">
-        <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)">
+        <label for="setCustomWords" style="display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--muted)">
           Custom Secret Words (optional — comma separated, 4–7 letter words)
-          <textarea id="setCustomWords" rows="2" placeholder="e.g. GAME, PLANET, JOURNEY, VICTORY" style="resize:vertical"></textarea>
+          <textarea id="setCustomWords" rows="2" placeholder="e.g. GAME, PLANET, JOURNEY, VICTORY" style="resize:vertical" aria-label="Custom secret words"></textarea>
         </label>
       </div>
 
       <p id="hostNote" style="color:var(--muted);font-size:13px;margin:12px 0 0"></p>
     </div>
 
-    <button id="startBtn" class="gold" style="font-size:18px;padding:16px">🚀 Start Game</button>
+    <button id="startBtn" class="gold" aria-label="Start Game" style="font-size:18px;padding:16px">🚀 Start Game</button>
   </div>
 </div>
 
@@ -1096,7 +1153,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
         <span>Players</span>
         <div style="display:flex;align-items:center;gap:8px">
           <span id="gcode" style="color:var(--muted);font-size:13px;cursor:pointer" title="Click to copy link"></span>
-          <button class="secondary" id="btnQuitLeft" style="padding:4px 10px;font-size:11px;font-weight:700;color:#fca5a5;border-color:rgba(239,68,68,0.3)" title="Leave Game">🚪 Quit</button>
+          <button class="secondary" id="btnQuitLeft" style="padding:4px 10px;font-size:11px;font-weight:700;color:#fca5a5;border-color:rgba(239,68,68,0.3)" title="Leave Game" aria-label="Quit game and return to home">🚪 Quit</button>
         </div>
       </div>
       <div class="players-list" id="gPlayers"></div>
@@ -1105,7 +1162,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
     <!-- Center Column: Wordle Board -->
     <div class="col center">
       <div class="topbar" style="width:100%">
-        <button class="secondary" id="btnQuitGame" style="padding:5px 12px;font-size:12px;font-weight:700;color:#fca5a5;border-color:rgba(239,68,68,0.3);display:inline-flex;align-items:center;gap:4px">🚪 Quit</button>
+        <button class="secondary" id="btnQuitGame" style="padding:5px 12px;font-size:12px;font-weight:700;color:#fca5a5;border-color:rgba(239,68,68,0.3);display:inline-flex;align-items:center;gap:4px" aria-label="Quit game and return to home">🚪 Quit</button>
         <span id="roundLbl" style="font-weight:800;color:var(--muted)">Round 1 / 3</span>
         <div class="timer-pill" id="timer">
           <span>⏱️</span><span id="timerTxt">--</span>
@@ -1134,22 +1191,37 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
       <div id="closeHintBox" style="min-height:24px"></div>
 
       <!-- Wordle Grid -->
-      <div class="board" id="board"></div>
+      <div class="board-wrapper" id="boardWrapper" title="Click boxes to type with keyboard" tabindex="-1">
+        <form id="mobileGuessForm" action="javascript:void(0);">
+          <input
+            id="mobileGuessInput"
+            type="text"
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="characters"
+            spellcheck="false"
+            inputmode="text"
+            enterkeyhint="go"
+            aria-label="Type your word guess here"
+          >
+        </form>
+        <div class="board" id="board" role="grid" aria-label="Wordle guess board"></div>
+      </div>
 
       <!-- Guess status -->
-      <div class="status-bar" id="status"></div>
+      <div class="status-bar" id="status" role="status" aria-live="polite"></div>
 
       <!-- Virtual Keyboard -->
-      <div class="kb" id="kb"></div>
+      <div class="kb" id="kb" role="group" aria-label="On-screen letter keyboard"></div>
 
       <!-- Skribbl Reaction Bar -->
-      <div class="reactions-bar">
-        <button class="rx-btn" data-rx="👍">👍</button>
-        <button class="rx-btn" data-rx="🔥">🔥</button>
-        <button class="rx-btn" data-rx="😂">😂</button>
-        <button class="rx-btn" data-rx="😮">😮</button>
-        <button class="rx-btn" data-rx="👏">👏</button>
-        <button class="rx-btn" data-rx="💀">💀</button>
+      <div class="reactions-bar" role="toolbar" aria-label="Reaction emojis">
+        <button class="rx-btn" data-rx="👍" aria-label="Thumbs up">👍</button>
+        <button class="rx-btn" data-rx="🔥" aria-label="Fire">🔥</button>
+        <button class="rx-btn" data-rx="😂" aria-label="Laughing">😂</button>
+        <button class="rx-btn" data-rx="😮" aria-label="Surprised">😮</button>
+        <button class="rx-btn" data-rx="👏" aria-label="Applause">👏</button>
+        <button class="rx-btn" data-rx="💀" aria-label="Skull">💀</button>
       </div>
     </div>
 
@@ -1160,19 +1232,20 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
       </div>
       <div class="chat-container" id="chat"></div>
       <div class="chatin">
-        <input id="chatIn" maxlength="200" placeholder="Say something…" autocomplete="off">
-        <button id="chatBtn">Send</button>
+        <input id="chatIn" maxlength="200" placeholder="Say something…" autocomplete="off" aria-label="Type a chat message">
+        <button id="chatBtn" aria-label="Send message">Send</button>
       </div>
     </div>
   </div>
 </div>
+</main>
 
 <!-- OVERLAY: ROUND INTERMISSION & GAME OVER -->
-<div id="overlay">
+<div id="overlay" role="dialog" aria-modal="true" aria-label="Round results and game over">
   <div class="card" id="ovCard"></div>
 </div>
 
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <script>
 // ==========================================
@@ -1573,6 +1646,7 @@ function handle(m) {
     const newRound = m.round !== prevRound;
     if (newRound) {
       cur = ''; prevLen = 0; prevDiscoveredCount = 0; recordedThisRound = false;
+      syncMobileInput();
       if (m.phase === 'playing') Sound.roundStart();
     }
 
@@ -1596,6 +1670,7 @@ function handle(m) {
     if ((m.phase === 'roundEnd' || m.phase === 'over') && !recordedThisRound && myPlayer) {
       recordedThisRound = true;
       recordGameResult(myPlayer.solved, m.me.length, myPlayer.roundPoints);
+      const inp = $('#mobileGuessInput'); if (inp) inp.blur();
     }
 
     S = m;
@@ -1625,6 +1700,9 @@ function handle(m) {
     updatePlayerTyping(m.id, m.len);
   } else if (m.type === 'left') {
     S = null;
+    cur = '';
+    syncMobileInput();
+    const inp = $('#mobileGuessInput'); if (inp) inp.blur();
     showScreen('home');
     history.replaceState(null, '', location.pathname);
   }
@@ -1645,6 +1723,8 @@ function leaveRoom() {
   }
   S = null;
   cur = '';
+  syncMobileInput();
+  const inp = $('#mobileGuessInput'); if (inp) inp.blur();
   prevRound = -1;
   prevLen = 0;
   prevDiscoveredCount = 0;
@@ -1884,9 +1964,24 @@ function buildKeyboard() {
     const row = el('div', 'kr');
     for (const ch of r) {
       const b = el('button', 'k');
-      if (ch === '*') { b.textContent = 'ENTER'; b.classList.add('wide'); b.onclick = () => key('Enter'); }
-      else if (ch === '<') { b.textContent = '⌫'; b.classList.add('wide'); b.onclick = () => key('Backspace'); }
-      else { b.textContent = ch; b.dataset.k = ch; b.onclick = () => key(ch); }
+      b.type = 'button';
+      b.onpointerdown = (e) => e.preventDefault();
+      if (ch === '*') {
+        b.textContent = 'ENTER';
+        b.classList.add('wide');
+        b.setAttribute('aria-label', 'Submit word guess');
+        b.onclick = () => key('Enter');
+      } else if (ch === '<') {
+        b.textContent = '⌫';
+        b.classList.add('wide');
+        b.setAttribute('aria-label', 'Backspace');
+        b.onclick = () => key('Backspace');
+      } else {
+        b.textContent = ch;
+        b.dataset.k = ch;
+        b.setAttribute('aria-label', `Letter ${ch.toUpperCase()}`);
+        b.onclick = () => key(ch);
+      }
       row.append(b);
     }
     kb.append(row);
@@ -1895,6 +1990,104 @@ function buildKeyboard() {
 buildKeyboard();
 
 function canType() { return S && S.phase === 'playing' && me() && !me().done; }
+
+function syncMobileInput() {
+  const inp = $('#mobileGuessInput');
+  if (inp && inp.value !== cur) {
+    inp.value = cur;
+  }
+}
+
+function focusMobileInput(e) {
+  if (!canType()) return;
+  const inp = $('#mobileGuessInput');
+  if (inp) {
+    inp.focus();
+    const len = inp.value.length;
+    try { inp.setSelectionRange(len, len); } catch (err) {}
+    setTimeout(() => {
+      const bw = $('#boardWrapper');
+      if (bw) bw.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 150);
+  }
+}
+
+const boardWrapper = $('#boardWrapper');
+if (boardWrapper) {
+  boardWrapper.addEventListener('click', focusMobileInput);
+}
+
+const mobileGuessInput = $('#mobileGuessInput');
+const mobileGuessForm = $('#mobileGuessForm');
+
+function updateMobileInputState() {
+  const active = canType();
+  if (mobileGuessForm) mobileGuessForm.style.display = active ? 'block' : 'none';
+  if (mobileGuessInput) {
+    mobileGuessInput.disabled = !active;
+    if (!active && document.activeElement === mobileGuessInput) mobileGuessInput.blur();
+  }
+}
+
+if (mobileGuessForm) {
+  mobileGuessForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    key('Enter');
+    if (mobileGuessInput) mobileGuessInput.value = cur;
+  });
+}
+
+if (mobileGuessInput) {
+  mobileGuessInput.addEventListener('input', (e) => {
+    if (!canType()) return;
+    const wordLen = S ? (S.wordLength || 5) : 5;
+    let clean = e.target.value.toLowerCase().replace(/[^a-z]/g, '');
+    if (clean.length > wordLen) {
+      clean = clean.slice(0, wordLen);
+    }
+    if (clean.length > cur.length) {
+      Sound.key();
+    } else if (clean.length < cur.length) {
+      Sound.backspace();
+    }
+    cur = clean;
+    e.target.value = cur;
+    notifyTyping();
+    renderBoard(false);
+  });
+
+  mobileGuessInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.keyCode === 13) {
+      e.preventDefault();
+      key('Enter');
+      e.target.value = cur;
+    }
+  });
+}
+
+// Double-tap to zoom prevention on mobile while preserving pinch-to-zoom
+document.addEventListener('dblclick', (e) => {
+  if (!['INPUT', 'TEXTAREA'].includes(e.target.tagName)) {
+    e.preventDefault();
+  }
+}, { passive: false });
+
+let lastTouchEnd = 0;
+document.addEventListener('touchend', (e) => {
+  // Never interfere with inputs, forms, or board clicks where software keyboard must appear
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.closest('#boardWrapper, #mobileGuessForm, input, textarea, select')) {
+    return;
+  }
+  const now = Date.now();
+  if (now - lastTouchEnd <= 300) {
+    const target = e.target;
+    if (target.closest('button, .k, .rx-btn, .icon-btn, .avatar-preview-box, .av-cycle-btn')) {
+      e.preventDefault();
+      target.click();
+    }
+  }
+  lastTouchEnd = now;
+}, { passive: false });
 
 function notifyTyping() {
   clearTimeout(typingDebounce);
@@ -1915,13 +2108,16 @@ function key(k) {
     }
     send({ type: 'guess', word: cur });
     cur = '';
+    syncMobileInput();
     notifyTyping();
   } else if (k === 'Backspace') {
     cur = cur.slice(0, -1);
+    syncMobileInput();
     Sound.backspace();
     notifyTyping();
   } else if (/^[a-z]$/.test(k) && cur.length < wordLen) {
     cur += k;
+    syncMobileInput();
     Sound.key();
     notifyTyping();
   }
@@ -1929,6 +2125,7 @@ function key(k) {
 }
 
 document.addEventListener('keydown', (e) => {
+  if (e.target.id === 'mobileGuessInput') return;
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   if (k === 'Enter' || k === 'Backspace' || /^[a-z]$/.test(k)) {
@@ -1960,12 +2157,14 @@ function renderBoard(flipLast) {
   for (let r = 0; r < 6; r++) {
     const row = el('div', 'brow');
     row.dataset.r = r;
+    row.setAttribute('role', 'row');
     row.style.gridTemplateColumns = `repeat(${wordLen}, 1fr)`;
     const g = guesses[r];
     if (g && flipLast && r === guesses.length - 1) row.classList.add('flip');
 
     for (let c = 0; c < wordLen; c++) {
       const t = el('div', 't');
+      t.setAttribute('role', 'gridcell');
       t.style.width = tileWidth;
       t.style.height = tileHeight;
       t.style.fontSize = fontSize;
@@ -1973,9 +2172,21 @@ function renderBoard(flipLast) {
       if (g) {
         t.textContent = g.word[c];
         t.classList.add(g.pattern[c]);
-      } else if (r === guesses.length && canType() && cur[c]) {
-        t.textContent = cur[c];
-        t.classList.add('f');
+        const statusMap = { g: 'correct', y: 'present in word', b: 'absent' };
+        t.setAttribute('aria-label', `Row ${r + 1}, Letter ${c + 1}: ${g.word[c]}, ${statusMap[g.pattern[c]] || ''}`);
+      } else if (r === guesses.length && canType()) {
+        if (cur[c]) {
+          t.textContent = cur[c];
+          t.classList.add('f');
+          t.setAttribute('aria-label', `Row ${r + 1}, Letter ${c + 1}: ${cur[c]}`);
+        } else {
+          t.setAttribute('aria-label', `Row ${r + 1}, Letter ${c + 1}: empty`);
+          if (c === cur.length) {
+            t.classList.add('active-slot');
+          }
+        }
+      } else {
+        t.setAttribute('aria-label', `Row ${r + 1}, Letter ${c + 1}: empty`);
       }
       row.append(t);
     }
@@ -2004,6 +2215,7 @@ function renderBoard(flipLast) {
     else st = `Guess ${Math.min(S.me.length + 1, 6)} of 6 (${wordLen} letters)${S.settings.hardMode ? ' • Hard' : ''}`;
   }
   $('#status').textContent = st;
+  updateMobileInputState();
 }
 
 function shakeRow() {
@@ -2349,6 +2561,7 @@ function render(flip) {
   renderBoard(flip);
   renderPlayers();
   renderOverlay();
+  updateMobileInputState();
 }
 
 let lastTickSec = -1;
