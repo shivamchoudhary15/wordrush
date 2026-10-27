@@ -788,7 +788,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .chatin button { padding: 10px 14px; border-radius: 10px; }
 
 /* Modals & Overlays */
-#overlay, #inspectModal, #statsModal {
+#overlay, #inspectModal, #statsModal, #roomsModal, #confirmModal {
   position: fixed;
   inset: 0;
   background: rgba(10, 14, 28, 0.88);
@@ -798,8 +798,18 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   z-index: 100;
   padding: 16px;
 }
-#overlay.show, #inspectModal.show, #statsModal.show { display: grid; }
-#overlay .card, #inspectModal .card, #statsModal .card { max-width: 480px; width: 100%; max-height: 92vh; overflow-y: auto; text-align: center; }
+#overlay.show, #inspectModal.show, #statsModal.show, #roomsModal.show, #confirmModal.show { display: grid; }
+#overlay .card, #inspectModal .card, #statsModal .card, #roomsModal .card, #confirmModal .card { max-width: 480px; width: 100%; max-height: 92vh; overflow-y: auto; text-align: center; }
+
+button.danger {
+  background: #ef4444;
+  color: #fff;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+button.danger:hover {
+  background: #dc2626;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4);
+}
 
 .word-reveal-box {
   background: var(--panel2);
@@ -1083,6 +1093,21 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
   </div>
 </div>
 
+<!-- MODAL: CONFIRM QUIT MODAL -->
+<div id="confirmModal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+  <div class="card" style="max-width:380px;width:100%;text-align:center;padding:24px">
+    <div style="font-size:42px;margin-bottom:10px">🚪</div>
+    <h3 id="confirmTitle" style="margin:0 0 8px;font-size:20px">Leave Game?</h3>
+    <p id="confirmDesc" style="color:var(--muted);font-size:14px;margin:0 0 22px;line-height:1.5">
+      Are you sure you want to quit the match and return to the home screen?
+    </p>
+    <div class="row" style="gap:10px">
+      <button class="secondary" id="btnConfirmCancel" style="flex:1;padding:12px;font-size:14px">Cancel</button>
+      <button class="danger" id="btnConfirmOk" style="flex:1;padding:12px;font-size:14px">Quit Game</button>
+    </div>
+  </div>
+</div>
+
 <!-- SCREEN: LOBBY -->
 <div id="lobby" class="screen">
   <div class="wrap">
@@ -1151,10 +1176,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
     <div class="col">
       <div class="topbar">
         <span>Players</span>
-        <div style="display:flex;align-items:center;gap:8px">
-          <span id="gcode" style="color:var(--muted);font-size:13px;cursor:pointer" title="Click to copy link"></span>
-          <button class="secondary" id="btnQuitLeft" style="padding:4px 10px;font-size:11px;font-weight:700;color:#fca5a5;border-color:rgba(239,68,68,0.3)" title="Leave Game" aria-label="Quit game and return to home">🚪 Quit</button>
-        </div>
+        <span id="gcode" style="color:var(--muted);font-size:13px;cursor:pointer" title="Click to copy invite link"></span>
       </div>
       <div class="players-list" id="gPlayers"></div>
     </div>
@@ -1718,6 +1740,7 @@ function showScreen(id) {
 }
 
 function leaveRoom() {
+  closeConfirm();
   if (ws && ws.readyState === WebSocket.OPEN) {
     send({ type: 'leave' });
   }
@@ -1731,6 +1754,7 @@ function leaveRoom() {
   recordedThisRound = false;
   $('#overlay').classList.remove('show');
   $('#inspectModal').classList.remove('show');
+  $('#confirmModal').classList.remove('show');
   showScreen('home');
   history.replaceState(null, '', location.pathname);
 }
@@ -1838,19 +1862,43 @@ $('#copyLink').onclick = () => {
     .then(() => toast('Invite link copied!'))
     .catch(() => prompt('Copy this link:', link));
 };
+let onConfirmCallback = null;
+function showConfirm(title, desc, action) {
+  $('#confirmTitle').textContent = title || 'Leave Game?';
+  $('#confirmDesc').textContent = desc || 'Are you sure you want to quit the match and return to the home screen?';
+  onConfirmCallback = action;
+  $('#confirmModal').classList.add('show');
+}
+
+function closeConfirm() {
+  $('#confirmModal').classList.remove('show');
+  onConfirmCallback = null;
+}
+
+$('#btnConfirmCancel').onclick = closeConfirm;
+$('#btnConfirmOk').onclick = () => {
+  const cb = onConfirmCallback;
+  closeConfirm();
+  if (cb) cb();
+};
+
+$('#confirmModal').onclick = (e) => {
+  if (e.target.id === 'confirmModal') closeConfirm();
+};
+
 $('#btnLeaveLobby').onclick = () => leaveRoom();
 $('#btnQuitGame').onclick = () => {
-  if (confirm('Are you sure you want to quit the match and return to home?')) leaveRoom();
-};
-$('#btnQuitLeft').onclick = () => {
-  if (confirm('Are you sure you want to quit the match and return to home?')) leaveRoom();
+  showConfirm('Leave Game?', 'Are you sure you want to quit the match and return to the home screen?', () => {
+    leaveRoom();
+  });
 };
 
 function renderLobby() {
   $('#lobbyCode').textContent = S.code;
-  $('#pcount').textContent = S.players.length;
+  const activePlayers = (S.players || []).filter((p) => p.connected !== false);
+  $('#pcount').textContent = activePlayers.length;
   const list = $('#lobbyPlayers'); list.replaceChildren();
-  for (const p of S.players) {
+  for (const p of activePlayers) {
     const c = el('div', 'pchip');
     const av = el('div', 'av-mini');
     av.innerHTML = renderAvatarSVG(p.avatar, 36);
@@ -2125,6 +2173,12 @@ function key(k) {
 }
 
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if ($('#confirmModal') && $('#confirmModal').classList.contains('show')) {
+      closeConfirm();
+      return;
+    }
+  }
   if (e.target.id === 'mobileGuessInput') return;
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.ctrlKey || e.metaKey || e.altKey) return;
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
@@ -2304,7 +2358,7 @@ $('#btnCloseInspect').onclick = () => $('#inspectModal').classList.remove('show'
 
 function renderPlayers() {
   const box = $('#gPlayers'); box.replaceChildren();
-  const sorted = [...S.players].sort((a, b) => b.score - a.score);
+  const sorted = [...(S.players || [])].filter((p) => p.connected !== false).sort((a, b) => b.score - a.score);
   const wordLen = S.wordLength || 5;
 
   sorted.forEach((p, i) => {
@@ -2455,7 +2509,7 @@ function renderOverlay() {
 
   card.append(title, box);
 
-  const sorted = [...S.players].sort((a, b) => b.score - a.score);
+  const sorted = [...(S.players || [])].filter((p) => p.connected !== false).sort((a, b) => b.score - a.score);
 
   if (over) {
     const podium = el('div', 'podium');
@@ -2524,7 +2578,9 @@ function renderOverlay() {
     bHome.style.marginTop = '8px';
     bHome.style.fontSize = '12px';
     bHome.onclick = () => {
-      if (confirm('Are you sure you want to quit the match and return to home?')) leaveRoom();
+      showConfirm('Leave Game?', 'Are you sure you want to quit the match and return to the home screen?', () => {
+        leaveRoom();
+      });
     };
     card.append(bHome);
   }
@@ -2615,6 +2671,17 @@ function sendChat() {
 }
 $('#chatBtn').onclick = sendChat;
 $('#chatIn').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
+
+function notifyLeave() {
+  if (ws && ws.readyState === WebSocket.OPEN && S) {
+    try {
+      ws.send(JSON.stringify({ type: 'leave' }));
+      ws.close();
+    } catch (e) {}
+  }
+}
+window.addEventListener('beforeunload', notifyLeave);
+window.addEventListener('pagehide', notifyLeave);
 
 // Initialize connection
 connect();

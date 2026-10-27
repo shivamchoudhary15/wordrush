@@ -336,7 +336,7 @@ function viewFor(room, p) {
     me: p.guesses,
     discoveredSpots: room.discoveredSpots || Array(len).fill(null),
     knownLetters: [...(room.knownLetters ? room.knownLetters.values() : [])],
-    players: [...room.players.values()].map((q) => ({
+    players: [...room.players.values()].filter((q) => q.connected).map((q) => ({
       id: q.id,
       name: q.name,
       avatar: q.avatar,
@@ -565,8 +565,11 @@ async function handleGuess(room, p, raw) {
 
 function removePlayer(ws) {
   const room = rooms.get(ws.roomCode);
+  const playerId = ws.playerId;
+  ws.roomCode = null;
+  ws.playerId = null;
   if (!room) return;
-  const p = room.players.get(ws.playerId);
+  const p = room.players.get(playerId);
   if (!p) return;
   p.connected = false;
   room.players.delete(p.id);
@@ -790,15 +793,19 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => removePlayer(ws));
-  ws.on('error', () => {});
+  ws.on('error', () => removePlayer(ws));
 });
 
 setInterval(() => {
   for (const ws of wss.clients) {
-    if (!ws.isAlive) { ws.terminate(); continue; }
+    if (!ws.isAlive) {
+      removePlayer(ws);
+      ws.terminate();
+      continue;
+    }
     ws.isAlive = false;
     ws.ping();
   }
-}, 30000);
+}, 5000);
 
 server.listen(PORT, () => console.log(`WordRush running at http://localhost:${PORT}`));
