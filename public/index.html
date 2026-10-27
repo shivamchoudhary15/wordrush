@@ -988,6 +988,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 <!-- SCREEN: LOBBY -->
 <div id="lobby" class="screen">
   <div class="wrap">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <button class="secondary" id="btnLeaveLobby" style="padding:8px 16px;font-size:13px;font-weight:700;display:inline-flex;align-items:center;gap:6px">← Home</button>
+      <span class="tagline" style="margin:0;font-size:13px">WordRush Lobby</span>
+    </div>
     <div class="card" style="text-align:center">
       <div class="tagline" style="margin:0">Invite Code</div>
       <div class="code-badge" id="lobbyCode"></div>
@@ -1049,7 +1053,10 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
     <div class="col">
       <div class="topbar">
         <span>Players</span>
-        <span id="gcode" style="color:var(--muted);font-size:13px;cursor:pointer" title="Click to copy link"></span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span id="gcode" style="color:var(--muted);font-size:13px;cursor:pointer" title="Click to copy link"></span>
+          <button class="secondary" id="btnQuitLeft" style="padding:4px 10px;font-size:11px;font-weight:700;color:#fca5a5;border-color:rgba(239,68,68,0.3)" title="Leave Game">🚪 Quit</button>
+        </div>
       </div>
       <div class="players-list" id="gPlayers"></div>
     </div>
@@ -1057,6 +1064,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
     <!-- Center Column: Wordle Board -->
     <div class="col center">
       <div class="topbar" style="width:100%">
+        <button class="secondary" id="btnQuitGame" style="padding:5px 12px;font-size:12px;font-weight:700;color:#fca5a5;border-color:rgba(239,68,68,0.3);display:inline-flex;align-items:center;gap:4px">🚪 Quit</button>
         <span id="roundLbl" style="font-weight:800;color:var(--muted)">Round 1 / 3</span>
         <div class="timer-pill" id="timer">
           <span>⏱️</span><span id="timerTxt">--</span>
@@ -1574,6 +1582,10 @@ function handle(m) {
     renderPublicRooms(m.rooms);
   } else if (m.type === 'typing') {
     updatePlayerTyping(m.id, m.len);
+  } else if (m.type === 'left') {
+    S = null;
+    showScreen('home');
+    history.replaceState(null, '', location.pathname);
   }
 }
 
@@ -1584,6 +1596,23 @@ function toast(t) {
 
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('active', s.id === id));
+}
+
+function leaveRoom() {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    send({ type: 'leave' });
+  }
+  S = null;
+  cur = '';
+  prevRound = -1;
+  prevLen = 0;
+  prevDiscoveredCount = 0;
+  recordedThisRound = false;
+  $('#overlay').classList.remove('show');
+  $('#inspectModal').classList.remove('show');
+  showScreen('home');
+  history.replaceState(null, '', location.pathname);
+  toast('Returned to home');
 }
 
 const me = () => S && S.players.find((p) => p.id === S.you);
@@ -1688,6 +1717,13 @@ $('#copyLink').onclick = () => {
   (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject())
     .then(() => toast('Invite link copied!'))
     .catch(() => prompt('Copy this link:', link));
+};
+$('#btnLeaveLobby').onclick = () => leaveRoom();
+$('#btnQuitGame').onclick = () => {
+  if (confirm('Are you sure you want to quit the match and return to home?')) leaveRoom();
+};
+$('#btnQuitLeft').onclick = () => {
+  if (confirm('Are you sure you want to quit the match and return to home?')) leaveRoom();
 };
 
 function renderLobby() {
@@ -2219,10 +2255,26 @@ function renderOverlay() {
     } else {
       card.append(el('div', 'tagline', 'Waiting for host to start a new match…'));
     }
+    const bHome = el('button', 'secondary', '🏠 Back to Home');
+    bHome.style.width = '100%';
+    bHome.style.padding = '12px';
+    bHome.style.marginTop = '8px';
+    bHome.onclick = () => leaveRoom();
+    card.append(bHome);
   } else {
     const timerTxt = el('div', 'tagline', '');
     timerTxt.id = 'ovTimer';
     card.append(timerTxt);
+
+    const bHome = el('button', 'secondary', '🚪 Leave Game');
+    bHome.style.width = '100%';
+    bHome.style.padding = '8px 12px';
+    bHome.style.marginTop = '8px';
+    bHome.style.fontSize = '12px';
+    bHome.onclick = () => {
+      if (confirm('Are you sure you want to quit the match and return to home?')) leaveRoom();
+    };
+    card.append(bHome);
   }
 
   ov.classList.add('show');

@@ -662,6 +662,15 @@ wss.on('connection', (ws) => {
         send(ws, { type: 'roomList', rooms: getPublicRooms() });
         break;
       }
+      case 'leave': {
+        if (room) {
+          removePlayer(ws);
+          ws.roomCode = null;
+          ws.playerId = null;
+        }
+        send(ws, { type: 'left' });
+        break;
+      }
       case 'typing': {
         if (!room || !player || room.phase !== 'playing' || player.done) return;
         const maxLen = room.wordLength || 5;
