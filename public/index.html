@@ -1167,7 +1167,6 @@ button.danger:hover {
     </div>
 
     <button id="startBtn" class="gold" aria-label="Start Game" style="font-size:18px;padding:16px">🚀 Start Game</button>
-    <button id="claimHostBtn" class="gold" aria-label="Claim Host Role and Start" style="font-size:16px;padding:15px;display:none;width:100%;margin-top:10px;background:linear-gradient(135deg, #f59e0b, #eab308);border:none;border-radius:10px;color:#18181b;font-weight:800;cursor:pointer">👑 Claim Host & Start</button>
   </div>
 </div>
 
@@ -1930,11 +1929,6 @@ function pushSettings() {
 });
 
 $('#startBtn').onclick = () => { initAudio(); send({ type: 'start' }); };
-$('#claimHostBtn').onclick = () => {
-  initAudio();
-  send({ type: 'claimHost' });
-  toast('👑 Claiming host role…');
-};
 $('#copyLink').onclick = () => {
   const link = location.origin + '/?room=' + S.code;
   (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject())
@@ -2005,10 +1999,7 @@ function renderLobby() {
     $(s).disabled = !host;
   });
   $('#startBtn').style.display = host ? 'block' : 'none';
-  $('#claimHostBtn').style.display = host ? 'none' : 'block';
-  $('#hostNote').textContent = host
-    ? 'You are the host. Customize word length and settings, then start!'
-    : 'Waiting for host to start the game… (Host disconnected or idle? Click "👑 Claim Host & Start" above!)';
+  $('#hostNote').textContent = host ? 'You are the host. Customize word length and settings, then start!' : 'Waiting for host to start the game…';
 }
 
 // ==========================================
@@ -2642,15 +2633,6 @@ function renderOverlay() {
       card.append(b);
     } else {
       card.append(el('div', 'tagline', 'Waiting for host to start a new match…'));
-      const bClaim = el('button', 'gold', '👑 Claim Host & Play Again');
-      bClaim.style.width = '100%';
-      bClaim.style.padding = '12px';
-      bClaim.style.marginTop = '6px';
-      bClaim.onclick = () => {
-        send({ type: 'claimHost' });
-        send({ type: 'again' });
-      };
-      card.append(bClaim);
     }
     const bHome = el('button', 'secondary', '🏠 Back to Home');
     bHome.style.width = '100%';
