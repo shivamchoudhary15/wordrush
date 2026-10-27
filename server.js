@@ -284,6 +284,8 @@ function addPlayer(room, ws, name, avatar) {
   let base = finalName, i = 2;
   while (names.has(finalName.toLowerCase())) finalName = `${base.slice(0, 13)}${i++}`;
 
+  const isMidRoundEnd = room.phase === 'roundEnd' || room.phase === 'over';
+
   const p = {
     id: crypto.randomUUID().slice(0, 8),
     name: finalName,
@@ -292,13 +294,13 @@ function addPlayer(room, ws, name, avatar) {
     score: 0,
     guesses: [],
     solved: false,
-    done: room.phase === 'playing' || room.phase === 'roundEnd',
+    done: isMidRoundEnd,
     typingLen: 0,
     roundPoints: 0,
     connected: true,
   };
   room.players.set(p.id, p);
-  if (!room.hostId) room.hostId = p.id;
+  if (!room.hostId || !room.players.has(room.hostId)) room.hostId = p.id;
   ws.playerId = p.id;
   ws.roomCode = room.code;
   return p;
@@ -567,8 +569,7 @@ function removePlayer(ws) {
   const p = room.players.get(ws.playerId);
   if (!p) return;
   p.connected = false;
-  if (room.phase === 'lobby') room.players.delete(p.id);
-  else p.done = true;
+  room.players.delete(p.id);
 
   const connected = [...room.players.values()].filter((q) => q.connected);
   if (!connected.length) {
@@ -576,9 +577,9 @@ function removePlayer(ws) {
     rooms.delete(room.code);
     return;
   }
-  if (room.hostId === p.id) {
+  if (!room.hostId || room.hostId === p.id || !room.players.has(room.hostId)) {
     room.hostId = connected[0].id;
-    say(room, `${connected[0].name} is now the host.`);
+    say(room, `👑 ${connected[0].name} is now the host.`);
   }
   say(room, `${p.name} left.`);
   broadcast(room);
