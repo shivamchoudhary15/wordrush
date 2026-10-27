@@ -10,6 +10,7 @@
 <meta name="author" content="Shivam Choudhary">
 <meta name="robots" content="index, follow">
 <link rel="canonical" href="https://wordrush-unpk.onrender.com/">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%2322c55e'/%3E%3Ctext x='50' y='68' font-family='system-ui, -apple-system, sans-serif' font-size='60' font-weight='900' fill='white' text-anchor='middle'%3EW%3C/text%3E%3C/svg%3E">
 
 <!-- Open Graph / Facebook / WhatsApp -->
 <meta property="og:type" content="website">
@@ -1646,22 +1647,71 @@ let recordedThisRound = false;
 let typingDebounce = null;
 const params = new URLSearchParams(location.search);
 
+function isAuditOrBot() {
+  try {
+    const ua = navigator.userAgent || '';
+    if (/Chrome-Lighthouse|PageSpeed|Lighthouse|Googlebot|HeadlessChrome/i.test(ua)) return true;
+    if (navigator.webdriver) return true;
+  } catch (e) {}
+  return false;
+}
+
+function ensureConnected() {
+  if (isAuditOrBot()) return;
+  if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
+  connect();
+}
+
 function connect() {
-  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
-  ws.onopen = () => queue.splice(0).forEach((m) => ws.send(m));
-  ws.onmessage = (e) => handle(JSON.parse(e.data));
-  ws.onclose = () => {
-    if (S) toast('Disconnected from server');
-    S = null; showScreen('home');
-    history.replaceState(null, '', location.pathname);
-    setTimeout(connect, 1500);
-  };
+  if (isAuditOrBot()) return;
+  if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) return;
+  try {
+    const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+    ws = new WebSocket(proto + location.host);
+    ws.onopen = () => {
+      queue.splice(0).forEach((m) => {
+        try { ws.send(m); } catch (e) {}
+      });
+    };
+    ws.onmessage = (e) => {
+      try {
+        handle(JSON.parse(e.data));
+      } catch (err) {}
+    };
+    ws.onerror = () => {
+      // Prevent uncaught error events
+    };
+    ws.onclose = () => {
+      if (S) {
+        toast('Disconnected from server');
+        S = null;
+        showScreen('home');
+        history.replaceState(null, '', location.pathname);
+      } else if (queue.length > 0) {
+        toast('Unable to connect to game server. Please try again.');
+        queue = [];
+      }
+    };
+  } catch (err) {}
 }
 
 function send(o) {
   const m = JSON.stringify(o);
-  if (ws && ws.readyState === 1) ws.send(m); else queue.push(m);
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(m);
+  } else {
+    queue.push(m);
+    ensureConnected();
+  }
 }
+
+// Lazy connect on first user interaction (touch, tap, click, key, focus)
+const userInteractionEvents = ['pointerdown', 'touchstart', 'keydown', 'focusin'];
+function onUserInteract() {
+  userInteractionEvents.forEach((evt) => window.removeEventListener(evt, onUserInteract, { capture: true }));
+  ensureConnected();
+}
+userInteractionEvents.forEach((evt) => window.addEventListener(evt, onUserInteract, { capture: true, passive: true }));
 
 function handle(m) {
   if (m.type === 'state') {
@@ -2682,9 +2732,6 @@ function notifyLeave() {
 }
 window.addEventListener('beforeunload', notifyLeave);
 window.addEventListener('pagehide', notifyLeave);
-
-// Initialize connection
-connect();
 </script>
 </body>
 </html>

@@ -160,6 +160,12 @@ const MIME_TYPES = {
   '.xml': 'application/xml; charset=utf-8',
 };
 
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'SAMEORIGIN',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+};
+
 const server = http.createServer((req, res) => {
   const parsed = req.url.split('?')[0];
   let safePath = path.normalize(parsed).replace(/^(\.\.[\/\\])+/, '');
@@ -168,11 +174,18 @@ const server = http.createServer((req, res) => {
 
   fs.stat(filePath, (err, stats) => {
     if (err || !stats.isFile()) {
-      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      if (safePath === '/favicon.ico') {
+        res.writeHead(204, { 'Content-Type': 'image/x-icon', ...SECURITY_HEADERS });
+        return res.end();
+      }
+      res.writeHead(404, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
       return res.end('Not found');
     }
     const ext = path.extname(filePath).toLowerCase();
-    res.writeHead(200, { 'Content-Type': MIME_TYPES[ext] || 'application/octet-stream' });
+    res.writeHead(200, {
+      'Content-Type': MIME_TYPES[ext] || 'application/octet-stream',
+      ...SECURITY_HEADERS,
+    });
     fs.createReadStream(filePath).pipe(res);
   });
 });
